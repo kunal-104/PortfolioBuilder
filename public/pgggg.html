@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Text Extractor</title>
+    <!-- Include PDF.js library from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .upload-section {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 20px;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            text-align: center;
+            background-color: #f9f9f9;
+        }
+        
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+        
+        #pdfFileInput {
+            opacity: 0;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+        
+        .file-input-button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        .file-name {
+            margin-top: 10px;
+            font-style: italic;
+            color: #666;
+        }
+        
+        #loadingSpinner {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left: 4px solid #4CAF50;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .output-container {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            min-height: 200px;
+            max-height: 500px;
+            overflow-y: auto;
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .text-output {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        .page-info {
+            display: none;
+            text-align: center;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>PDF Text Extractor</h1>
+    
+    <div class="container">
+        <div class="upload-section">
+            <p>Select a PDF file to extract its text</p>
+            <div class="file-input-wrapper">
+                <button class="file-input-button">Choose PDF File</button>
+                <input type="file" id="pdfFileInput" accept="application/pdf">
+            </div>
+            <div class="file-name" id="fileName">No file selected</div>
+        </div>
+        
+        <div id="loadingSpinner">
+            <div class="spinner"></div>
+            <p>Extracting text from PDF...</p>
+        </div>
+        
+        <div class="page-info" id="pageInfo"></div>
+        
+        <div class="output-container">
+            <div class="text-output" id="textOutput">The extracted text will appear here.</div>
+        </div>
+        
+        <div class="controls">
+            <button id="copyButton" disabled>Copy to Clipboard</button>
+            <button id="downloadButton" disabled>Download as Text File</button>
+        </div>
+    </div>
+
+    <script>
+        // Set the worker source for PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        
+        // Get references to DOM elements
+        const fileInput = document.getElementById('pdfFileInput');
+        const fileNameDisplay = document.getElementById('fileName');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const textOutput = document.getElementById('textOutput');
+        const pageInfo = document.getElementById('pageInfo');
+        const copyButton = document.getElementById('copyButton');
+        const downloadButton = document.getElementById('downloadButton');
+        
+        // Variable to store the extracted text
+        let extractedText = '';
+        
+        // Listen for file selection
+        fileInput.addEventListener('change', handleFileSelection);
+        
+        // Handle Copy button click
+        copyButton.addEventListener('click', () => {
+            if (extractedText) {
+                navigator.clipboard.writeText(extractedText)
+                    .then(() => {
+                        const originalText = copyButton.textContent;
+                        copyButton.textContent = 'Copied!';
+                        setTimeout(() => {
+                            copyButton.textContent = originalText;
+                        }, 2000);
+                    })
+                    .catch(err => {
+                        console.error('Could not copy text: ', err);
+                        alert('Failed to copy text to clipboard');
+                    });
+            }
+        });
+        
+        // Handle Download button click
+        downloadButton.addEventListener('click', () => {
+            if (extractedText) {
+                const blob = new Blob([extractedText], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'extracted-text.txt';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        });
+        
+        // Handle file selection
+        function handleFileSelection(event) {
+            const file = event.target.files[0];
+            
+            if (file && file.type === 'application/pdf') {
+                fileNameDisplay.textContent = file.name;
+                extractTextFromPDF(file);
+            } else if (file) {
+                fileNameDisplay.textContent = 'Invalid file type. Please select a PDF.';
+                textOutput.textContent = 'Please select a valid PDF file.';
+            } else {
+                fileNameDisplay.textContent = 'No file selected';
+            }
+        }
+        
+        // Extract text from PDF file
+        async function extractTextFromPDF(pdfFile) {
+            // Reset state and show loading
+            extractedText = '';
+            textOutput.textContent = 'Processing...';
+            loadingSpinner.style.display = 'block';
+            pageInfo.style.display = 'none';
+            copyButton.disabled = true;
+            downloadButton.disabled = true;
+            
+            try {
+                // Read the file as ArrayBuffer
+                const arrayBuffer = await readFileAsArrayBuffer(pdfFile);
+                
+                // Load the PDF document
+                const pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+                const numPages = pdfDoc.numPages;
+                
+                // Update page info
+                pageInfo.textContent = `PDF has ${numPages} page${numPages !== 1 ? 's' : ''}`;
+                pageInfo.style.display = 'block';
+                
+                // Extract text from each page
+                for (let i = 1; i <= numPages; i++) {
+                    const page = await pdfDoc.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+                    
+                    extractedText += `=== Page ${i} ===\n\n${pageText}\n\n`;
+                    
+                    // Update the output in real-time
+                    textOutput.textContent = extractedText;
+                }
+                
+                // Enable buttons
+                copyButton.disabled = false;
+                downloadButton.disabled = false;
+                
+            } catch (error) {
+                console.error('Error extracting text from PDF:', error);
+                textOutput.textContent = `Error extracting text: ${error.message}`;
+                extractedText = '';
+            } finally {
+                loadingSpinner.style.display = 'none';
+            }
+        }
+        
+        // Helper function to read file as ArrayBuffer
+        function readFileAsArrayBuffer(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+                reader.readAsArrayBuffer(file);
+            });
+        }
+    </script>
+</body>
+</html>
